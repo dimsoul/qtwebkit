@@ -3,17 +3,14 @@ name: CMake Build Matrix
 on:
   push:
     branches:
-      - qtwebkit-dev-wip
-      - wk2
-      - qtwebkit-5.212
+      - qtwebkit-5.14.1
 
   pull_request:
     branches:
-      - qtwebkit-dev-wip
-      - qtwebkit-5.212
+      - qtwebkit-5.14.1
 
 env:
-  QT_VERSION: 5.15.1
+  QT_VERSION: 5.14.1
   CCACHE_VERSION: 3.7.7
   CACHE_PARTITION: dev
   HOST_N_CORES: 2
@@ -34,20 +31,9 @@ jobs:
       matrix:
         config:
         - {
-            name: "Ubuntu Release", artifact: "Linux",
-            os: ubuntu-latest,
+            name: "Centos Release", artifact: "Linux",
+            os: Centos-latest,
             build_type: Release,
-          }
-        - {
-            name: "macOS Release", artifact: "macOS",
-            os: macos-latest,
-            build_type: Release,
-          }
-        - {
-            name: "Windows MSVC Conan Release", artifact: "Windows-MSVC",
-            os: windows-latest,
-            build_type: Release,
-            environment_script: "C:/Program Files (x86)/Microsoft Visual Studio/2019/Enterprise/VC/Auxiliary/Build/vcvars64.bat"
           }
 
     steps:
@@ -70,38 +56,6 @@ jobs:
         echo "!LayoutTests" >> .git/info/sparse-checkout
         git -c protocol.version=2 fetch --no-tags --prune --progress --depth=10 origin +${GITHUB_SHA}:refs/remotes/origin/${BRANCH}
         git checkout --progress --force -B $BRANCH refs/remotes/origin/$BRANCH
-
-    - name: Download Qt Windows
-      id: qt_win
-      if: runner.os == 'Windows'
-      env:
-        TOOLCHAIN: "win64_msvc2019_64"
-        DIR: "msvc2019_64"
-      shell: bash --noprofile --norc -eo pipefail -x {0} 
-      run: |
-        py -m pip install -r Tools/qt/qt-downloader-requirements.txt
-        QT_INSTALL_DIR="/c/Qt"
-        py Tools/qt/qt-downloader windows desktop ${QT_VERSION} ${TOOLCHAIN} --output=${QT_INSTALL_DIR} --qt_modules="${QT_MODULES}"
-        export QTDIR="${QT_INSTALL_DIR}/${QT_VERSION}/${DIR}"
-        ls $QTDIR
-        Tools/qt/license_writer.sh
-        QTWINDIR="C:\\Qt\\${QT_VERSION}\\${DIR}"
-        echo "::set-output name=qt_dir::${QTWINDIR}"
-
-    - name: Download Qt Mac
-      id: qt_mac
-      if: runner.os == 'macOS'
-      shell: bash --noprofile --norc -eo pipefail -x {0}
-      env: 
-        TOOLCHAIN: "clang_64"
-      run: |
-        pip3 install -r Tools/qt/qt-downloader-requirements.txt
-        QT_INSTALL_DIR="${PWD}/Qt"
-        Tools/qt/qt-downloader macos desktop ${QT_VERSION} ${TOOLCHAIN} --output=${QT_INSTALL_DIR} --qt_modules="${QT_MODULES}"
-        export QTDIR="${QT_INSTALL_DIR}/${QT_VERSION}/${TOOLCHAIN}"
-        ls $QTDIR
-        Tools/qt/license_writer.sh
-        echo "::set-output name=qt_dir::${QTDIR}"
 
     - name: Download ccache
       id: ccache
@@ -137,7 +91,7 @@ jobs:
       run: |
         pip3 install conan
 
-    - name: Install dependencies (Ubuntu)
+    - name: Install dependencies (Centos)
       if: runner.os == 'Linux'
       run: |
         sudo apt-get update && sudo apt-get install \
@@ -166,16 +120,6 @@ jobs:
       shell: bash --noprofile --norc -eo pipefail -x {0}
       run: cmake $cmake_args -H. -Bbuild -GNinja -DCMAKE_BUILD_TYPE=${{ matrix.config.build_type }}
 
-    - name: Configure (MSVC)
-      if: runner.os == 'Windows' && matrix.config.environment_script != ''
-      shell: cmd
-      run: py Tools\qt\build-qtwebkit-conan.py --configure --cmakeargs="%cmake_args%" --qt="${{ steps.qt_win.outputs.qt_dir }}" || exit /b 1
-
-    - name: Configure (macOS/Conan)
-      if: runner.os == 'macOS'
-      shell: bash --noprofile --norc -eo pipefail -x {0}
-      run: Tools/qt/build-qtwebkit-conan.py --configure --cmakeargs="$cmake_args" --qt="${{ steps.qt_mac.outputs.qt_dir }}"
-
 #    - uses: actions/upload-artifact@v1
 #      with:
 #        path: build/CMakeCache.txt
@@ -202,16 +146,6 @@ jobs:
       if: runner.os == 'Linux'
       shell: bash --noprofile --norc -eo pipefail -x {0}
       run: ninja -C build -j $HOST_N_CORES -v
-
-    - name: Build (MSVC/Conan)
-      if: runner.os == 'Windows' && matrix.config.environment_script != ''
-      shell: cmd
-      run: py Tools\qt\build-qtwebkit-conan.py --build --install --ninjaargs="-j %HOST_N_CORES% -v" || exit /b 1
-
-    - name: Build (macOS/Conan)
-      if: runner.os == 'macOS'
-      shell: bash --noprofile --norc -eo pipefail -x {0}
-      run: Tools/qt/build-qtwebkit-conan.py --build --install --ninjaargs="-j $HOST_N_CORES -v"
 
     # - name: Verify (Linux)
     #   if: runner.os == 'Linux'
